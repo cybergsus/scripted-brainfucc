@@ -7,14 +7,14 @@ use std::collections::BTreeMap;
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct BFSource {
-    commands: Vec<(BFCommand, usize)>,
+    commands: Vec<(u8, usize)>,
 }
 
 impl std::fmt::Display for BFSource {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         for (comm, amount) in self.commands.iter().cloned() {
             for _ in 0..amount {
-                write!(fmt, "{}", comm as u8 as char)?;
+                write!(fmt, "{}", comm as char)?;
             }
         }
         Ok(())
@@ -39,7 +39,8 @@ pub struct Compiler {
     temporaries: Vec<usize>,
     size: usize,
     current_address: usize,
-    output: Vec<(BFCommand, usize)>,
+    output: Vec<(u8, usize)>,
+    addr_stack: Vec<usize>,
 }
 
 impl Default for Compiler {
@@ -50,11 +51,64 @@ impl Default for Compiler {
             size: 0,
             current_address: 0,
             output: Vec::new(),
+            addr_stack: Vec::new(),
         }
     }
 }
 
 impl Compiler {
+    fn save_addr(&mut self) {
+        self.addr_stack.push(self.current_address);
+    }
+
+    fn load_addr(&mut self) {
+        let addr = self.addr_stack.pop().unwrap_or(0);
+        self.go_to(addr);
+    }
+
+    fn dismiss_addr(&mut self) {
+        self.addr_stack.pop();
+    }
+
+    pub fn with_saved<F, T>(&mut self, f: F) -> Option<T>
+    where
+        F: Fn(&mut Self) -> Option<T>,
+    {
+        self.save_addr();
+        let res = f(self);
+        if res.is_some() {
+            self.dismiss_addr();
+        } else {
+            self.load_addr();
+        }
+        res
+    }
+
+    pub fn add_comment(&mut self, comm: &str) {
+        self.with_temps(1, |ctx| {
+            let addr = ctx.get_temp(0).unwrap();
+            ctx.with_saved(|ctx| -> Option<()> {
+                ctx.newline();
+                ctx.go_to(addr);
+                ctx.zero_current_cell();
+                ctx.loop_with(|ctx| {
+                    for byte in comm.bytes() {
+                        ctx.output.push((byte, 1));
+                    }
+                });
+                ctx.newline();
+                None
+            });
+        })
+    }
+
+    /// appends a newline into the output.
+    fn newline(&mut self) {
+        if self.output.last().filter(|(x, _)| x == &b'\n').is_none() {
+            self.output.push((b'\n', 1));
+        }
+    }
+
     pub fn go_to(&mut self, addr: usize) {
         if addr == self.current_address {
             return;
@@ -84,6 +138,7 @@ impl Compiler {
         if amount == 0 {
             return;
         }
+        let command = command as u8;
         if let Some(last) = self.output.last_mut().filter(|(x, _)| x == &command) {
             last.1 += amount;
         } else {
@@ -92,9 +147,10 @@ impl Compiler {
     }
 
     fn dealloc_temps(&mut self, n: usize) {
-        for _ in 0..n {
+        for _ in 0..=n {
             self.temporaries.pop();
         }
+        self.size -= n;
     }
 
     fn alloc_temps(&mut self, n: usize) {
@@ -135,6 +191,7 @@ impl Compiler {
 
     /// Compiles a program that outputs `st`.
     fn compile_print_text(&mut self, st: &str) {
+        self.add_comment(&format!("print text: {:?}", st));
         self.with_temps(1, move |ctx| {
             let addr = ctx.get_temp(0).unwrap();
             ctx.go_to(addr);
@@ -167,6 +224,7 @@ impl Compiler {
     }
 
     fn compile_inst(&mut self, inst: Instruction) {
+        self.add_comment(&format!("compile instruction: {}", inst));
         match inst {
             Instruction::Msg { messages } => self.compile_msg(messages),
         }
@@ -193,6 +251,16 @@ pub fn compile(ast: &mut Vec<ASTNode>) -> BFSource {
         comp.compile_ast(node);
     }
     comp.release()
+}
+
+pub fn compile_with_filename(file_name: &str, mut ast: Vec<ASTNode>) -> BFSource {
+    let mut compiler = Compiler::default();
+    compiler.add_comment(&format!("BEGIN FILE {:?}", file_name));
+    for node in ast.drain(..) {
+        compiler.compile_ast(node);
+    }
+    compiler.add_comment(&format!("END FILE {:?}", file_name));
+    compiler.release()
 }
 
 #[cfg(test)]

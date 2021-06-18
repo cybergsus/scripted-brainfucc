@@ -1,7 +1,7 @@
 mod lib;
 
 use lib::common::WithPosition;
-use lib::compiler::{compile, BFSource};
+use lib::compiler::{compile_with_filename, BFSource};
 use lib::parser::*;
 use std::collections::HashMap;
 use std::env::args;
@@ -15,10 +15,10 @@ enum CompileResult {
     Parser(WithPosition<ParseError>),
 }
 
-fn compile_src(src: &str) -> Result<BFSource, WithPosition<ParseError>> {
+fn compile_src(name: &str, src: &str) -> Result<BFSource, WithPosition<ParseError>> {
     let mut parser = Parser::new(src);
     let mut ast = parser.parse_ast()?;
-    Ok(compile(&mut ast))
+    Ok(compile_with_filename(name, ast))
 }
 
 fn compile_file(name: &str) -> Result<BFSource, CompileResult> {
@@ -45,7 +45,7 @@ fn compile_file(name: &str) -> Result<BFSource, CompileResult> {
         .map_err(CompileResult::IO)?;
     src.push_str(file_src.as_ref());
 
-    compile_src(src.as_ref()).map_err(CompileResult::Parser)
+    compile_src(name, src.as_ref()).map_err(CompileResult::Parser)
 }
 
 fn main() {
