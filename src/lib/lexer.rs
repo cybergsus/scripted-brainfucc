@@ -333,7 +333,7 @@ impl<'a> Lexer<'a> {
                 if let Some(kw) = self.lex_kw() {
                     Ok(Some(Token::Keyword(kw)))
                 } else {
-                    // TODO: names
+                    // TODO(#4): names
                     Err(LexError::Other("names are yet to be implemented".into()))
                 }
             }
