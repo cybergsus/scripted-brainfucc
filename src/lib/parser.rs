@@ -341,14 +341,16 @@ mod tests {
             Some(&Token::Literal("hi".into()))
         );
         parser.next();
-        assert_eq!(
-            parser.peek_token().err().map(WithPosition::into_data),
-            Some(ParseError::Lexical(LexError::Other(
-                "names are yet to be implemented".into()
-            )))
-        );
         Ok(())
     }
+
+    #[test]
+    #[should_panic(expected = "implement names")]
+    fn peek_token_todo() {
+        let mut parser = Parser::new("hi");
+        parser.peek_token().unwrap();
+    }
+
     #[test]
     fn expect() -> ParseResult<()> {
         let mut parser = Parser::new("msg \"hello, world!\\n\"");
