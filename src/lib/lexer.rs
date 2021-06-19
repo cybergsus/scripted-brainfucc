@@ -296,7 +296,7 @@ impl<'a> Lexer<'a> {
         .is_some()
     }
 
-    // TODO: numbers
+    // TODO(#2): numbers
     fn lex_hex_num(&mut self) -> Result<Option<String>, LexError> {
         if !self.skip_literal("0x") {
             return Ok(None);
