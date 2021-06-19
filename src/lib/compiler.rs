@@ -289,4 +289,5 @@ pub fn compile_with_filename(file_name: &str, mut ast: Vec<ASTNode>) -> BFSource
 #[cfg(test)]
 mod tests {
     use super::*;
+    // TODO(#7): implement tests for compiler methods1
 }

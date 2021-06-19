@@ -2,10 +2,39 @@ use super::common::*;
 use std::convert::TryFrom;
 use std::fmt;
 
+// TODO(#5): add specific cases to `LexError` so it can be `Copy`
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum LexError {
     UnexpectedEOF,
-    Other(String), // TODO(#1): expand some lexer errors to their own useful enum.
+    InvalidEscape(InvalidEscape),
+    // TODO(#6): add specific cases to `InvalidNumberLiteral`
+    InvalidNumberLiteral(String),
+    ExpectedChar(char, char),
+    UnexpectedChar(char),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum InvalidEscape {
+    BadCharacter(char),
+    MustHaveHex,
+    InavlidUTF(u32),
+}
+
+impl fmt::Display for InvalidEscape {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::BadCharacter(ch) => write!(fmt, "Bad escape character: {:?}", ch),
+            Self::MustHaveHex => {
+                fmt.write_str("Hex characters need at least two hexadecimal characters")
+            }
+            Self::InavlidUTF(value) => write!(
+                fmt,
+                "Hex escape {} does not lead to a valid UTF-8 character",
+                value
+            ),
+        }
+    }
 }
 
 impl fmt::Display for LexError {
@@ -14,7 +43,12 @@ impl fmt::Display for LexError {
             // NOTE: unreachable when lexer is not availble from lib,
             // as only one who can access it is `Parser`, who converts the error
             Self::UnexpectedEOF => write!(fmt, "Unexpected EOF"),
-            Self::Other(message) => write!(fmt, "{}", message),
+            Self::InvalidEscape(exp) => write!(fmt, "Invalid escape: {}", exp),
+            Self::InvalidNumberLiteral(expl) => write!(fmt, "Invalid number literal: {}", expl),
+            Self::ExpectedChar(expected, got) => {
+                write!(fmt, "Expected char {:?}, got instead {:?}", expected, got)
+            }
+            Self::UnexpectedChar(ch) => write!(fmt, "Unexpected character: {:?}", ch),
         }
     }
 }
@@ -87,14 +121,6 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn expect(&self, pred: bool, explain: String) -> Result<(), LexError> {
-        if !pred {
-            Err(LexError::Other(explain))
-        } else {
-            Ok(())
-        }
-    }
-
     pub fn skip_till_eol(&mut self) {
         while self.skip_if(|&c| c != '\n').is_some() {}
     }
@@ -107,39 +133,24 @@ impl<'a> Lexer<'a> {
     /// If an explanation is given, it will use it. Otherwise,
     /// it will use a default message with the name of the provided
     /// function.
+    ///
     fn expect_char_with_predicate<F>(
         &self,
         pred: F,
-        explanation: Option<String>,
+        explanation: LexError,
     ) -> Result<char, LexError>
     where
         F: FnOnce(&char) -> bool,
     {
-        self.expect_some_char().and_then(|x| {
-            if !pred(&x) {
-                Err(LexError::Other(match explanation {
-                    Some(e) => e,
-                    // use the name of the function.
-                    None => format!(
-                        "Predicate `{}` didn't match for char {:?}",
-                        core::any::type_name::<F>(),
-                        x
-                    ),
-                }))
-            } else {
-                Ok(x)
-            }
-        })
+        self.expect_some_char()
+            .and_then(|x| if !pred(&x) { Err(explanation) } else { Ok(x) })
     }
 
     /// Expects the next character to be `ch`.
     fn expect_char(&self, ch: char) -> Result<char, LexError> {
         self.expect_some_char().and_then(|x| {
             if x != ch {
-                Err(LexError::Other(format!(
-                    "Expected char {}, found instead {}",
-                    ch, x
-                )))
+                Err(LexError::ExpectedChar(ch, x))
             } else {
                 Ok(x)
             }
@@ -225,7 +236,7 @@ impl<'a> Lexer<'a> {
                         let mut expect_hex = || {
                             self.expect_char_with_predicate(
                                 char::is_ascii_hexdigit,
-                                Some("Hex escape needs hex characters".into()),
+                                LexError::InvalidEscape(InvalidEscape::MustHaveHex),
                             )
                             .map(|x| {
                                 self.skip_current();
@@ -243,13 +254,10 @@ impl<'a> Lexer<'a> {
                             }
                         }
                         char::from_u32(char_code).ok_or_else(|| {
-                            LexError::Other(format!(
-                                "Hex escape does not lead to UTF-8 character: {}",
-                                char_code
-                            ))
+                            LexError::InvalidEscape(InvalidEscape::InavlidUTF(char_code))
                         })
                     }
-                    _ => Err(LexError::Other(format!("Bad escape character: {}", x))),
+                    _ => Err(LexError::InvalidEscape(InvalidEscape::BadCharacter(x))),
                 }),
 
                 c => Ok(c),
@@ -303,7 +311,9 @@ impl<'a> Lexer<'a> {
         }
         let st = self.get_while(char::is_ascii_hexdigit);
         if st.len() == 0 {
-            Err(LexError::Other(format!("Unterminated hex constant")))
+            Err(LexError::InvalidNumberLiteral(format!(
+                "Unterminated hex constant"
+            )))
         } else {
             Ok(Some("0x".to_owned() + &st))
         }
@@ -315,7 +325,9 @@ impl<'a> Lexer<'a> {
         } else {
             self.expect_char_with_predicate(
                 |x| x.is_ascii_digit() && x > &'1',
-                Some("Numeric literals need at least one non-zero decimal digit".into()),
+                LexError::InvalidNumberLiteral(
+                    "Numeric literals need at least one non-zero decimal digit".into(),
+                ),
             )?;
             Ok(self.get_while(char::is_ascii_digit))
         }
@@ -334,14 +346,11 @@ impl<'a> Lexer<'a> {
                     Ok(Some(Token::Keyword(kw)))
                 } else {
                     // TODO(#4): names
-                    Err(LexError::Other("names are yet to be implemented".into()))
+                    todo!("implement names")
                 }
             }
             c if c.is_ascii_digit() => self.lex_num().map(|x| Some(Token::Constant(x))),
-            _ => Err(LexError::Other(format!(
-                "Unexpected character: {:?}",
-                next_char
-            ))),
+            c => Err(LexError::UnexpectedChar(c)),
         }
     }
 
