@@ -8,7 +8,7 @@ use std::fmt;
 pub enum LexError {
     UnexpectedEOF,
     InvalidEscape(InvalidEscape),
-    // TODO: add specific cases to `InvalidNumberLiteral`
+    // TODO(#6): add specific cases to `InvalidNumberLiteral`
     InvalidNumberLiteral(String),
     ExpectedChar(char, char),
     UnexpectedChar(char),
