@@ -5,7 +5,7 @@ use std::fmt;
 #[derive(Debug, PartialEq, Eq)]
 pub enum LexError {
     UnexpectedEOF,
-    Other(String), // TODO: expand some lexer errors to their own useful enum.
+    Other(String), // TODO(#1): expand some lexer errors to their own useful enum.
 }
 
 impl fmt::Display for LexError {
