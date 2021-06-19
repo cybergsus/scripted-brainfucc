@@ -1,4 +1,5 @@
 use std::convert::TryFrom;
+use std::fmt;
 #[derive(Debug)]
 pub struct WithPosition<T> {
     pub data: T,
@@ -18,6 +19,12 @@ impl<T> WithPosition<T> {
 
     pub fn into_data(self) -> T {
         self.data
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for WithPosition<T> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{} @ {}", self.data, self.position)
     }
 }
 
@@ -102,6 +109,7 @@ impl<T> AsRef<T> for WithPosition<T> {
 pub enum Token {
     Keyword(Keyword),
     Literal(String),
+    Constant(String),
 }
 
 impl Token {
@@ -118,13 +126,32 @@ impl Token {
             _ => None,
         }
     }
+
+    pub fn as_constant(&self) -> Option<&String> {
+        match self {
+            Self::Constant(st) => Some(st),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum ExpectedToken {
     Keyword(Keyword),
     Literal,
+    Constant,
     AnyToken,
+}
+
+impl fmt::Display for ExpectedToken {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Keyword(kw) => write!(fmt, "keyword `{}`", kw),
+            Self::Literal => fmt.write_str("string literal"),
+            Self::Constant => fmt.write_str("string literal"),
+            Self::AnyToken => fmt.write_str("any token"),
+        }
+    }
 }
 
 impl Into<ExpectedToken> for &Token {
@@ -132,6 +159,7 @@ impl Into<ExpectedToken> for &Token {
         match self {
             Token::Keyword(kw) => ExpectedToken::Keyword(*kw),
             Token::Literal(_) => ExpectedToken::Literal,
+            Token::Constant(_) => ExpectedToken::Constant,
         }
     }
 }
@@ -168,10 +196,18 @@ macro_rules! impl_todo {
     };
 }
 
+impl fmt::Display for Keyword {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str(match self {
+            Keyword::Msg => "msg",
+        })
+    }
+}
+
 impl TryFrom<&str> for Keyword {
     type Error = ();
     fn try_from(st: &str) -> Result<Self, Self::Error> {
-        match st {
+        match st.to_ascii_lowercase().as_ref() {
             "msg" => Ok(Self::Msg),
             "set" => impl_todo!(set),
             "inc" => impl_todo!(inc),
@@ -210,6 +246,13 @@ impl Default for Position {
         Self { line: 1, col: 0 }
     }
 }
+
+impl fmt::Display for Position {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "L{}:{}", self.line, self.col)
+    }
+}
+
 impl Position {
     #[inline(always)]
     pub fn newline(&mut self) {

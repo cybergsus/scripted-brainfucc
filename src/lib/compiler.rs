@@ -70,6 +70,13 @@ impl Compiler {
         self.addr_stack.pop();
     }
 
+    /// Saves the current address and tries to perform the action.
+    /// If it returns `Some`, it will dismiss the saved address
+    /// and continue normally, but if it receives `None`, it will
+    /// backtrack to the saved address.
+    ///
+    /// NOTE: would be beneficial to use the [Try API](https://doc.rust-lang.org/std/ops/trait.Try.html)
+    /// once it's stable.
     pub fn with_saved<F, T>(&mut self, f: F) -> Option<T>
     where
         F: Fn(&mut Self) -> Option<T>,
@@ -82,6 +89,19 @@ impl Compiler {
             self.load_addr();
         }
         res
+    }
+
+    /// Goes to `addr` and performs `action`.
+    /// Then goes back to the previous spot.
+    pub fn with_cell<F, T>(&mut self, addr: usize, action: F) -> T
+    where
+        F: Fn(&mut Self) -> T,
+    {
+        self.save_addr();
+        self.go_to(addr);
+        let result = action(self);
+        self.load_addr();
+        result
     }
 
     pub fn add_comment(&mut self, comm: &str) {
@@ -214,11 +234,14 @@ impl Compiler {
     }
 
     fn compile_msg(&mut self, messages: Vec<RValue>) {
-        for msg in messages {
+        for (i, msg) in messages.iter().enumerate() {
             match msg {
                 RValue::Literal(st) => self.compile_print_text(st.as_ref()),
-                RValue::Constant(_) => todo!("message constants"),
+                RValue::Constant(x) => self.compile_print_text(x.to_string().as_ref()),
                 RValue::Reference(_) => todo!("message variables"),
+            }
+            if i != messages.len() - 1 {
+                self.compile_print_text(" ");
             }
         }
     }

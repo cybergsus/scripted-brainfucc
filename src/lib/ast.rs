@@ -31,7 +31,7 @@ impl std::fmt::Display for Instruction {
 
 #[derive(Debug)]
 pub enum RValue {
-    Constant(u8),
+    Constant(usize),
     Literal(String),
     Reference(LValue),
 }
@@ -46,6 +46,12 @@ impl std::fmt::Display for RValue {
     }
 }
 
+impl From<usize> for RValue {
+    fn from(c: usize) -> Self {
+        Self::Constant(c)
+    }
+}
+
 impl From<String> for RValue {
     fn from(st: String) -> Self {
         Self::Literal(st)
@@ -55,7 +61,13 @@ impl From<String> for RValue {
 #[derive(Debug)]
 pub struct LValue {
     name: String,
-    offset: Option<Box<RValue>>,
+    offset: Option<usize>,
+}
+
+impl LValue {
+    pub fn offset(&mut self) -> usize {
+        *self.offset.get_or_insert(0)
+    }
 }
 
 impl std::fmt::Display for LValue {

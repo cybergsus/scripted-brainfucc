@@ -1,10 +1,22 @@
 use super::common::*;
 use std::convert::TryFrom;
+use std::fmt;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum LexError {
     UnexpectedEOF,
-    Other(String),
+    Other(String), // TODO: expand some lexer errors to their own useful enum.
+}
+
+impl fmt::Display for LexError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            // NOTE: unreachable when lexer is not availble from lib,
+            // as only one who can access it is `Parser`, who converts the error
+            Self::UnexpectedEOF => write!(fmt, "Unexpected EOF"),
+            Self::Other(message) => write!(fmt, "{}", message),
+        }
+    }
 }
 
 // pub type LexResult<T> = Result<WithPosition<T>, WithPosition<LexError>>;
@@ -132,6 +144,15 @@ impl<'a> Lexer<'a> {
                 Ok(x)
             }
         })
+    }
+
+    pub fn expect_whitespace(&self) -> Result<(), WithPosition<LexError>> {
+        self.expect_char(' ')
+            .map(|_| ())
+            .map_err(|data| WithPosition {
+                data,
+                position: self.current_pos,
+            })
     }
 
     fn skip_if<F>(&mut self, pred: F) -> Option<char>
@@ -276,11 +297,28 @@ impl<'a> Lexer<'a> {
     }
 
     // TODO: numbers
-    fn lex_hex_num(&mut self) -> Result<Option<u8>, LexError> {
+    fn lex_hex_num(&mut self) -> Result<Option<String>, LexError> {
         if !self.skip_literal("0x") {
             return Ok(None);
         }
-        todo!()
+        let st = self.get_while(char::is_ascii_hexdigit);
+        if st.len() == 0 {
+            Err(LexError::Other(format!("Unterminated hex constant")))
+        } else {
+            Ok(Some("0x".to_owned() + &st))
+        }
+    }
+
+    fn lex_num(&mut self) -> Result<String, LexError> {
+        if let Some(st) = self.lex_hex_num()? {
+            Ok(st)
+        } else {
+            self.expect_char_with_predicate(
+                |x| x.is_ascii_digit() && x > &'1',
+                Some("Numeric literals need at least one non-zero decimal digit".into()),
+            )?;
+            Ok(self.get_while(char::is_ascii_digit))
+        }
     }
 
     fn _next_token(&mut self) -> Result<Option<Token>, LexError> {
@@ -299,6 +337,7 @@ impl<'a> Lexer<'a> {
                     Err(LexError::Other("names are yet to be implemented".into()))
                 }
             }
+            c if c.is_ascii_digit() => self.lex_num().map(|x| Some(Token::Constant(x))),
             _ => Err(LexError::Other(format!(
                 "Unexpected character: {:?}",
                 next_char
@@ -370,6 +409,24 @@ mod test {
         assert_eq!(
             lexer.next_token()?.data,
             Some(Token::Literal("hello, world!\n".into()))
+        );
+        Ok(())
+    }
+    #[test]
+    fn lex_num() -> Result<(), WithPosition<LexError>> {
+        let mut lexer = Lexer::new("42 432 0x00 0x34");
+        assert_eq!(lexer.next_token()?.data, Some(Token::Constant("42".into())));
+        assert_eq!(
+            lexer.next_token()?.data,
+            Some(Token::Constant("432".into()))
+        );
+        assert_eq!(
+            lexer.next_token()?.data,
+            Some(Token::Constant("0x00".into()))
+        );
+        assert_eq!(
+            lexer.next_token()?.data,
+            Some(Token::Constant("0x34".into()))
         );
         Ok(())
     }

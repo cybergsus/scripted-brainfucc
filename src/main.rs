@@ -15,9 +15,19 @@ enum CompileResult {
     Parser(WithPosition<ParseError>),
 }
 
+use std::fmt;
+impl fmt::Display for CompileResult {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::IO(e) => write!(fmt, "io error: {}", e),
+            Self::Parser(p) => write!(fmt, "parser error: {}", p),
+        }
+    }
+}
+
 fn compile_src(name: &str, src: &str) -> Result<BFSource, WithPosition<ParseError>> {
     let mut parser = Parser::new(src);
-    let mut ast = parser.parse_ast()?;
+    let ast = parser.parse_ast()?;
     Ok(compile_with_filename(name, ast))
 }
 
@@ -60,7 +70,6 @@ fn main() {
     std::io::stdout().lock().flush().unwrap();
 
     for (file_name, err) in errors {
-        // TODO: error display
-        eprintln!("Error in file {:?}: {:?}", file_name, err);
+        eprintln!("Error in file {:?}: {}", file_name, err);
     }
 }

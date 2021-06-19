@@ -1,12 +1,27 @@
 use super::ast::*;
 use super::common::*;
 use super::lexer::Lexer;
+use std::fmt;
+use std::str::FromStr;
+use std::usize;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
     Lexical(super::lexer::LexError),
     UnexpectedEOF,
     ExpectedToken(ExpectedToken),
+    FailedNumParse(<usize as FromStr>::Err, String),
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Lexical(lerr) => write!(fmt, "lexical error: {}", lerr),
+            Self::ExpectedToken(e) => write!(fmt, "expected token: {}", e),
+            Self::UnexpectedEOF => write!(fmt, "Unexpected EOF"),
+            Self::FailedNumParse(e, s) => write!(fmt, "Failed to parse {:?} into usize: {}", s, e),
+        }
+    }
 }
 
 use super::lexer::LexError;
@@ -178,13 +193,25 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_rvalue(&mut self) -> ParseResult<RValue> {
-        // TODO: multiple parsers
-        let literal = self.expect_literal()?;
-        Ok(RValue::from(literal))
+    fn expect_constant(&mut self) -> ParseResult<String> {
+        self.expect_token(ExpectedToken::Constant)
+            .map(|tok| tok.into_data().as_constant().unwrap().clone())
     }
 
-    // TODO: parse rvalue
+    fn parse_num(&mut self) -> ParseResult<usize> {
+        let num_st = self.expect_constant()?;
+        num_st.parse::<usize>().or_else(|x| {
+            let data = ParseError::FailedNumParse(x, num_st.into());
+            let position = self.last_position()?;
+            Err(WithPosition { data, position })
+        })
+    }
+
+    fn parse_rvalue(&mut self) -> ParseResult<RValue> {
+        let parse_literal = |parser: &mut Self| parser.expect_literal().map(RValue::from);
+        let parse_const = |parser: &mut Self| parser.parse_num().map(RValue::from);
+        self.try_multiple(&[&parse_literal, &parse_const])
+    }
 
     fn parse_msg(&mut self) -> ParseResult<Instruction> {
         self.expect_keyword(Keyword::Msg)?;
@@ -192,6 +219,8 @@ impl<'a> Parser<'a> {
         self.next();
 
         let messages = self.one_or_more(Self::parse_rvalue)?;
+
+        dbg!(&messages);
 
         Ok(Instruction::Msg { messages })
     }
@@ -210,6 +239,40 @@ impl<'a> Parser<'a> {
         res
     }
 
+    /// Runs a parser. If the parser fails,
+    /// it acts as it didn't consume input.
+    /// returns the result of the parser.
+    fn try_one<F, T>(&mut self, parser: F) -> ParseResult<T>
+    where
+        F: Fn(&mut Self) -> ParseResult<T>,
+    {
+        self.save_pos();
+        let res = parser(self);
+        if res.is_err() {
+            self.load_pos();
+        } else {
+            self.dismiss_pos();
+        }
+        res
+    }
+
+    fn try_multiple<T>(
+        &mut self,
+        parsers: &[&dyn Fn(&mut Self) -> ParseResult<T>],
+    ) -> ParseResult<T> {
+        let mut last_err = None;
+        for parser in parsers {
+            match self.try_one(parser) {
+                Err(e) => {
+                    last_err = Some(e);
+                    break;
+                }
+                Ok(x) => return Ok(x),
+            }
+        }
+        Err(last_err.unwrap())
+    }
+
     fn one_or_more<F, T>(&mut self, f: F) -> ParseResult<Vec<T>>
     where
         F: Fn(&mut Self) -> ParseResult<T>,
@@ -220,7 +283,7 @@ impl<'a> Parser<'a> {
         self.next();
         vec.extend(std::iter::from_fn(|| {
             self.optionally(|ctx| {
-                f(ctx).map(|x| {
+                ctx.try_one(&f).map(|x| {
                     ctx.next();
                     x
                 })
@@ -253,7 +316,7 @@ impl<'a> Parser<'a> {
 
     pub fn parse_ast(&mut self) -> ParseResult<Vec<ASTNode>> {
         let mut vec = Vec::new();
-        while let Some(tok) = self.peek_token()?.into_data() {
+        while self.peek_token()?.into_data().is_some() {
             let node = self.parse_ast_node()?;
             vec.push(node);
         }
