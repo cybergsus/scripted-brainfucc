@@ -260,7 +260,7 @@ impl Compiler {
         }
     }
 
-    // TODO: make this return `Result`.
+    // TODO(#3): make this return `Result`.
     pub fn release(self) -> BFSource {
         BFSource {
             commands: self.output,
