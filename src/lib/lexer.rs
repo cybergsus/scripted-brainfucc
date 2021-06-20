@@ -116,13 +116,16 @@ impl<'a> Lexer<'a> {
     }
 
     fn skip_whitespace(&mut self) {
-        while let Some(c) = self.peek_char().filter(|&c| c.is_whitespace()) {
+        while let Some(c) = self.peek_char().filter(|&c| c == ' ' || c == '\t') {
             self.advance_input(c);
         }
     }
 
-    pub fn skip_till_eol(&mut self) {
-        while self.skip_if(|&c| c != '\n').is_some() {}
+    pub fn eol(&mut self) -> Result<(), WithPosition<LexError>> {
+        self.skip_whitespace();
+        self.with_pos(|ctx| ctx.expect_char('\n'))
+            .diverge()
+            .map(|_| ())
     }
 
     fn expect_some_char(&self) -> Result<char, LexError> {

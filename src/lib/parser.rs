@@ -306,6 +306,7 @@ impl<'a> Parser<'a> {
         let parsed = match self.expect_keywords(&[Keyword::Msg])? {
             Keyword::Msg => self.parse_msg(),
         };
+        self.lexer.eol().map_err(|x| x.map(ParseError::from))?;
         //        self.lexer.skip_till_eol();
         parsed
     }
@@ -324,6 +325,9 @@ impl<'a> Parser<'a> {
     }
 }
 
+// FIXME: Error in file "test.bfs": parser error: lexical error: Unexpected character: '\n' @ L1:94
+// > cat test.bfs
+// < msg "Solution to everything is: " 42
 #[cfg(test)]
 mod tests {
     use super::*;
