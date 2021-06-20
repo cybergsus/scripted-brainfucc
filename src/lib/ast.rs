@@ -1,7 +1,8 @@
 #[derive(Debug, PartialEq, Eq)]
 pub enum ASTNode {
     Instruction(Instruction),
-    // TODO: expand `ASTNode`
+    // TODO(#11): Var declaration
+    // TODO: procedures
 }
 
 #[derive(Debug, PartialEq, Eq)]
