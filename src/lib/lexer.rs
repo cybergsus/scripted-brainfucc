@@ -2,23 +2,35 @@ use super::common::*;
 use std::convert::TryFrom;
 use std::fmt;
 
-// TODO(#5): add specific cases to `LexError` so it can be `Copy`
-
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum LexError {
     UnexpectedEOF,
     InvalidEscape(InvalidEscape),
-    // TODO(#6): add specific cases to `InvalidNumberLiteral`
-    InvalidNumberLiteral(String),
+    InvalidNumberLiteral(InvalidNumLiteral),
     ExpectedChar(char, char),
     UnexpectedChar(char),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum InvalidEscape {
     BadCharacter(char),
     MustHaveHex,
     InavlidUTF(u32),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum InvalidNumLiteral {
+    UnfinishedHex,
+    MustStartNZ,
+}
+
+impl fmt::Display for InvalidNumLiteral {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::UnfinishedHex => write!(fmt, "Need hex characters after \"0x\""),
+            Self::MustStartNZ => write!(fmt, "Number must start either with 0x for a hexadecimal value or with a non-zero digit for a decimal value"),
+        }
+    }
 }
 
 impl fmt::Display for InvalidEscape {
@@ -314,9 +326,9 @@ impl<'a> Lexer<'a> {
         }
         let st = self.get_while(char::is_ascii_hexdigit);
         if st.len() == 0 {
-            Err(LexError::InvalidNumberLiteral(format!(
-                "Unterminated hex constant"
-            )))
+            Err(LexError::InvalidNumberLiteral(
+                InvalidNumLiteral::UnfinishedHex,
+            ))
         } else {
             Ok(Some("0x".to_owned() + &st))
         }
@@ -328,9 +340,7 @@ impl<'a> Lexer<'a> {
         } else {
             self.expect_char_with_predicate(
                 |x| x.is_ascii_digit() && x > &'1',
-                LexError::InvalidNumberLiteral(
-                    "Numeric literals need at least one non-zero decimal digit".into(),
-                ),
+                LexError::InvalidNumberLiteral(InvalidNumLiteral::MustStartNZ),
             )?;
             Ok(self.get_while(char::is_ascii_digit))
         }
