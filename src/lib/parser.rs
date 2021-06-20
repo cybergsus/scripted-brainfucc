@@ -325,7 +325,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-// FIXME: Error in file "test.bfs": parser error: lexical error: Unexpected character: '\n' @ L1:94
+// FIXME(#10): Error in file "test.bfs": parser error: lexical error: Unexpected character: '\n' @ L1:94
 // > cat test.bfs
 // < msg "Solution to everything is: " 42
 #[cfg(test)]
