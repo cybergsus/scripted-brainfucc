@@ -4,5 +4,10 @@ This is a Rust implementaion for the compiler in [this kata](https://www.codewar
 
 ## What is working
 
-- `msg <literal>+` to spit messages.
+- `msg <literal | constant>+` to spit messages.
+
+Example:
+```
+msg "the answer is: " 42 "\n"
+```
 
