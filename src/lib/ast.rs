@@ -2,7 +2,7 @@
 pub enum ASTNode {
     Instruction(Instruction),
     // TODO(#11): Var declaration
-    // TODO: procedures
+    // TODO(#12): procedures
 }
 
 #[derive(Debug, PartialEq, Eq)]
