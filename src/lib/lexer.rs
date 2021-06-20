@@ -84,11 +84,11 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn save_pointer(&mut self) {
+    pub fn save_pointer(&mut self) {
         self.last_pointers.push((self.input, self.current_pos));
     }
 
-    fn load_pointer(&mut self) {
+    pub fn load_pointer(&mut self) {
         // reserve always the last one
         let (input, pos) = if self.last_pointers.len() == 1 {
             self.last_pointers[0]
@@ -101,7 +101,7 @@ impl<'a> Lexer<'a> {
         self.current_pos = pos;
     }
 
-    fn dismiss_pointer(&mut self) {
+    pub fn dismiss_pointer(&mut self) {
         if self.last_pointers.len() > 1 {
             self.last_pointers.pop();
         }
@@ -135,9 +135,20 @@ impl<'a> Lexer<'a> {
 
     pub fn eol(&mut self) -> Result<(), WithPosition<LexError>> {
         self.skip_whitespace();
-        self.with_pos(|ctx| ctx.expect_char('\n'))
-            .diverge()
-            .map(|_| ())
+        self.with_pos(|ctx| {
+            let result = ctx.expect_char('\n');
+            if result
+                .err()
+                .filter(|e| matches!(e, LexError::UnexpectedEOF))
+                .is_some()
+            {
+                return Ok(());
+            }
+            ctx.skip_current();
+            Ok(())
+        })
+        .diverge()
+        .map(|_| ())
     }
 
     fn expect_some_char(&self) -> Result<char, LexError> {
@@ -201,19 +212,26 @@ impl<'a> Lexer<'a> {
     }
 
     /// Saves the current input pointer and executes the function.
-    /// If the function returns a result, it dismisses the pointer.
-    ///
-    pub fn with_saved<F, T>(&mut self, fnc: F) -> Option<T>
+    /// If the function returns an `Err`, it will load back the pointer
+    pub fn with_saved<F, T, E>(&mut self, fnc: F) -> Result<T, E>
     where
-        F: FnOnce(&mut Self) -> Option<T>,
+        F: FnOnce(&mut Self) -> Result<T, E>,
     {
         self.save_pointer();
         let result = fnc(self);
-        match result {
-            Some(_) => self.dismiss_pointer(),
-            None => self.load_pointer(),
+        if result.is_err() {
+            self.load_pointer();
+        } else {
+            self.dismiss_pointer();
         }
         result
+    }
+
+    pub fn optionally<F, T, E>(&mut self, lexer: F) -> Option<T>
+    where
+        F: FnOnce(&mut Self) -> Result<T, E>,
+    {
+        self.with_saved(lexer).map_or(None, Some)
     }
 
     /// Lexes a string literal.
@@ -298,23 +316,23 @@ impl<'a> Lexer<'a> {
     /// Tries to lex a keyword. Backtracks
     /// if it can't find it.
     fn lex_kw(&mut self) -> Option<Keyword> {
-        self.with_saved(|lexer| {
+        self.optionally(|lexer| {
             match Keyword::try_from(lexer.get_while(char::is_ascii_alphabetic).as_str()) {
-                Ok(kw) => Some(kw),
-                Err(_) => None,
+                Ok(kw) => Ok(kw),
+                Err(_) => Err(()),
             }
         })
     }
 
     fn skip_literal(&mut self, lit: &str) -> bool {
         let chars = lit.chars();
-        self.with_saved(|lexer| {
+        self.optionally(|lexer| {
             for ch in chars {
                 if !lexer.skip_if(|&x| x == ch).is_some() {
-                    return None;
+                    return Err(());
                 }
             }
-            return Some(());
+            return Ok(());
         })
         .is_some()
     }
@@ -436,7 +454,11 @@ mod test {
     }
     #[test]
     fn lex_num() -> Result<(), WithPosition<LexError>> {
-        let mut lexer = Lexer::new("42 432 0x00 0x34");
+        let mut lexer = Lexer::new("\"hello\" 42 432 0x00 0x34");
+        assert_eq!(
+            lexer.next_token()?.data,
+            Some(Token::Literal("hello".into()))
+        );
         assert_eq!(lexer.next_token()?.data, Some(Token::Constant("42".into())));
         assert_eq!(
             lexer.next_token()?.data,
@@ -450,6 +472,17 @@ mod test {
             lexer.next_token()?.data,
             Some(Token::Constant("0x34".into()))
         );
+        Ok(())
+    }
+    #[test]
+    fn complete_instruction() -> Result<(), WithPosition<LexError>> {
+        let mut lexer = Lexer::new("msg \"the answer is: \" 42");
+        assert_eq!(lexer.next_token()?.data, Some(Token::Keyword(Keyword::Msg)));
+        assert_eq!(
+            lexer.next_token()?.data,
+            Some(Token::Literal("the answer is: ".into()))
+        );
+        assert_eq!(lexer.next_token()?.data, Some(Token::Constant("42".into())));
         Ok(())
     }
 }

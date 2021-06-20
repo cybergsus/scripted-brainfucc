@@ -169,10 +169,18 @@ impl PartialEq for ExpectedToken {
         match (self, rhs) {
             (Self::Keyword(xk), Self::Keyword(yk)) => xk == yk,
             (Self::Literal, Self::Literal) => true,
+            (Self::Constant, Self::Constant) => true,
             // this way I can impl expect_token(AnyToken) and
             // let it pass.
             (Self::AnyToken, _) | (_, Self::AnyToken) => true,
-            _ => false,
+
+            // separate to make adding new enums trigger rustc
+            // on this match.
+            //
+            // NOTE: THESE NEED TO BE SEPARATED. NO DEFAULT MATCHES ALLOWED
+            (Self::Keyword(_), _) => false,
+            (Self::Literal, _) => false,
+            (Self::Constant, _) => false,
         }
     }
 }

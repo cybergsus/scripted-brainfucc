@@ -88,6 +88,11 @@ impl<'a> Parser<'a> {
         }
     }
 
+    #[inline]
+    fn get_last_pos(&mut self) -> usize {
+        self.pos_stack.pop().unwrap_or(0)
+    }
+
     fn next(&mut self) {
         if !self.at_eof {
             self.pos += 1;
@@ -120,7 +125,7 @@ impl<'a> Parser<'a> {
             x.map_or_else(
                 || Err(ParseError::UnexpectedEOF),
                 |tok| {
-                    if <&Token as Into<ExpectedToken>>::into(tok) != expected {
+                    if tok != expected {
                         Err(ParseError::ExpectedToken(expected))
                     } else {
                         Ok(tok)
@@ -140,14 +145,8 @@ impl<'a> Parser<'a> {
     }
 
     fn expect_literal(&mut self) -> ParseResult<String> {
-        self.expect_token(ExpectedToken::Literal).map(|tok| {
-            tok.map(|t| match t {
-                Token::Literal(st) => st,
-                _ => unreachable!(),
-            })
-            .into_data()
-            .clone()
-        })
+        self.expect_token(ExpectedToken::Literal)
+            .map(|tok| tok.into_data().as_literal().unwrap().clone())
     }
 
     fn has_keyword(&mut self, kw: Keyword) -> ParseResult<bool> {
@@ -210,7 +209,13 @@ impl<'a> Parser<'a> {
     fn parse_rvalue(&mut self) -> ParseResult<RValue> {
         let parse_literal = |parser: &mut Self| parser.expect_literal().map(RValue::from);
         let parse_const = |parser: &mut Self| parser.parse_num().map(RValue::from);
-        self.try_multiple(&[&parse_literal, &parse_const])
+
+        let res = self.try_one(parse_literal);
+        if res.is_err() {
+            parse_const(self)
+        } else {
+            res
+        }
     }
 
     fn parse_msg(&mut self) -> ParseResult<Instruction> {
@@ -220,23 +225,7 @@ impl<'a> Parser<'a> {
 
         let messages = self.one_or_more(Self::parse_rvalue)?;
 
-        dbg!(&messages);
-
         Ok(Instruction::Msg { messages })
-    }
-
-    fn with_saved<F, T>(&mut self, f: F) -> Option<T>
-    where
-        F: Fn(&mut Self) -> Option<T>,
-    {
-        self.save_pos();
-        let res = f(self);
-        if res.is_some() {
-            self.dismiss_pos();
-        } else {
-            self.load_pos();
-        }
-        res
     }
 
     /// Runs a parser. If the parser fails,
@@ -256,23 +245,6 @@ impl<'a> Parser<'a> {
         res
     }
 
-    fn try_multiple<T>(
-        &mut self,
-        parsers: &[&dyn Fn(&mut Self) -> ParseResult<T>],
-    ) -> ParseResult<T> {
-        let mut last_err = None;
-        for parser in parsers {
-            match self.try_one(parser) {
-                Err(e) => {
-                    last_err = Some(e);
-                    break;
-                }
-                Ok(x) => return Ok(x),
-            }
-        }
-        Err(last_err.unwrap())
-    }
-
     fn one_or_more<F, T>(&mut self, f: F) -> ParseResult<Vec<T>>
     where
         F: Fn(&mut Self) -> ParseResult<T>,
@@ -283,7 +255,7 @@ impl<'a> Parser<'a> {
         self.next();
         vec.extend(std::iter::from_fn(|| {
             self.optionally(|ctx| {
-                ctx.try_one(&f).map(|x| {
+                f(ctx).map(|x| {
                     ctx.next();
                     x
                 })
@@ -292,14 +264,15 @@ impl<'a> Parser<'a> {
         Ok(vec)
     }
 
-    fn optionally<F, T>(&mut self, f: F) -> Option<T>
+    /// Returns Ok(None) if the parser failed but didn't consume any input.
+    /// Otherwise it returns the result.
+    ///
+    fn optionally<F, T>(&mut self, parser: F) -> Option<T>
     where
         F: Fn(&mut Self) -> ParseResult<T>,
+        T: std::fmt::Debug,
     {
-        self.with_saved(|lexer| {
-            let result = f(lexer);
-            result.map_or(None, Some)
-        })
+        self.try_one(parser).map_or(None, Some)
     }
 
     fn parse_instruction(&mut self) -> ParseResult<Instruction> {
@@ -315,8 +288,9 @@ impl<'a> Parser<'a> {
         self.parse_instruction().map(ASTNode::Instruction)
     }
 
-    pub fn parse_ast(&mut self) -> ParseResult<Vec<ASTNode>> {
+    pub fn parse_ast(mut self) -> ParseResult<Vec<ASTNode>> {
         let mut vec = Vec::new();
+
         while self.peek_token()?.into_data().is_some() {
             let node = self.parse_ast_node()?;
             vec.push(node);
@@ -362,6 +336,39 @@ mod tests {
         parser.next();
         let st = parser.expect_literal()?;
         assert_eq!(st, "hello, world!\n");
+        Ok(())
+    }
+    #[test]
+    fn parse_rvalue() -> ParseResult<()> {
+        let mut parser = Parser::new("42 \"hello\"");
+        assert_eq!(parser.parse_rvalue()?, RValue::from(42));
+        parser.next();
+        assert_eq!(parser.parse_rvalue()?, RValue::Literal("hello".into()));
+        Ok(())
+    }
+
+    #[test]
+    //#[ignore = "halts"]
+    fn msg() -> ParseResult<()> {
+        let parser = Parser::new("msg \"the answer is: \" 42 \"\\n\"");
+        assert_eq!(
+            parser.parse_ast()?,
+            vec![ASTNode::Instruction(Instruction::Msg {
+                messages: vec![
+                    RValue::from(String::from("the answer is: ")),
+                    RValue::from(42),
+                    RValue::from(String::from("\n"))
+                ]
+            })]
+        );
+        let parser = Parser::new("msg \"The solution for everything is: \" 42");
+        assert_eq!(parser.parse_ast()?,
+        vec![ASTNode::Instruction(Instruction::Msg {
+            messages: vec![
+                RValue::from(String::from("The solution for everything is: ")),
+                RValue::from(42),
+            ]
+        })]);
         Ok(())
     }
 }
