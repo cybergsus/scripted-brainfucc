@@ -1,10 +1,11 @@
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ASTNode {
     Instruction(Instruction),
-    // TODO: expand `ASTNode`
+    // TODO(#11): Var declaration
+    // TODO(#12): procedures
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Instruction {
     Msg { messages: Vec<RValue> },
 }
@@ -26,7 +27,7 @@ impl std::fmt::Display for Instruction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum RValue {
     Constant(usize),
     Literal(String),
@@ -55,15 +56,15 @@ impl From<String> for RValue {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct LValue {
     name: String,
-    offset: Option<usize>,
+    offset: Option<Box<RValue>>,
 }
 
 impl LValue {
-    pub fn offset(&mut self) -> usize {
-        *self.offset.get_or_insert(0)
+    pub fn offset(&mut self) -> &Box<RValue> {
+        self.offset.get_or_insert_with(|| Box::new(RValue::from(0)))
     }
 }
 

@@ -56,6 +56,7 @@ impl Default for Compiler {
     }
 }
 
+// TODO(#13): `lvalue` & `rvalue` access & declaration (with default value 0)
 impl Compiler {
     fn save_addr(&mut self) {
         self.addr_stack.push(self.current_address);
