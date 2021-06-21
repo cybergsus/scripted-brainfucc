@@ -63,7 +63,7 @@ pub struct LValue {
 }
 
 impl LValue {
-    pub fn offset(&mut self) -> &Box<RValue> {
+    pub fn offset(&mut self) -> &RValue {
         self.offset.get_or_insert_with(|| Box::new(RValue::from(0)))
     }
 }

@@ -97,7 +97,7 @@ impl<'a> Lexer<'a> {
                 .pop()
                 .unwrap_or_else(|| self.last_pointers[0])
         };
-        self.input = &input;
+        self.input = input;
         self.current_pos = pos;
     }
 
@@ -124,7 +124,9 @@ impl<'a> Lexer<'a> {
     }
 
     fn skip_current(&mut self) {
-        self.peek_char().map(|x| self.advance_input(x));
+        if let Some(x) = self.peek_char() {
+            self.advance_input(x);
+        }
     }
 
     fn skip_whitespace(&mut self) {
@@ -231,7 +233,7 @@ impl<'a> Lexer<'a> {
     where
         F: FnOnce(&mut Self) -> Result<T, E>,
     {
-        self.with_saved(lexer).map_or(None, Some)
+        self.with_saved(lexer).ok()
     }
 
     /// Lexes a string literal.
@@ -286,9 +288,9 @@ impl<'a> Lexer<'a> {
                                 char_code = char_code << 4 | hex_to_int(d);
                             }
                         }
-                        char::from_u32(char_code).ok_or_else(|| {
-                            LexError::InvalidEscape(InvalidEscape::InavlidUTF(char_code))
-                        })
+                        char::from_u32(char_code).ok_or(LexError::InvalidEscape(
+                            InvalidEscape::InavlidUTF(char_code),
+                        ))
                     }
                     _ => Err(LexError::InvalidEscape(InvalidEscape::BadCharacter(x))),
                 }),
@@ -328,11 +330,11 @@ impl<'a> Lexer<'a> {
         let chars = lit.chars();
         self.optionally(|lexer| {
             for ch in chars {
-                if !lexer.skip_if(|&x| x == ch).is_some() {
+                if lexer.skip_if(|&x| x == ch).is_none() {
                     return Err(());
                 }
             }
-            return Ok(());
+            Ok(())
         })
         .is_some()
     }
@@ -343,7 +345,7 @@ impl<'a> Lexer<'a> {
             return Ok(None);
         }
         let st = self.get_while(char::is_ascii_hexdigit);
-        if st.len() == 0 {
+        if st.is_empty() {
             Err(LexError::InvalidNumberLiteral(
                 InvalidNumLiteral::UnfinishedHex,
             ))

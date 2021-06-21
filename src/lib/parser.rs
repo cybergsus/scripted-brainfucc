@@ -165,15 +165,13 @@ impl<'a> Parser<'a> {
         let tok = self.peek_token()?;
         Ok(if tok.data.is_some() {
             tok.position
+        } else if self.pos == 0 {
+            Position::default()
         } else {
-            if self.pos == 0 {
-                Position::default()
-            } else {
-                self.pos -= 1;
-                let pos = self.peek_token()?.position;
-                self.pos += 1;
-                pos
-            }
+            self.pos -= 1;
+            let pos = self.peek_token()?.position;
+            self.pos += 1;
+            pos
         })
     }
 
@@ -200,7 +198,7 @@ impl<'a> Parser<'a> {
     fn parse_num(&mut self) -> ParseResult<usize> {
         let num_st = self.expect_constant()?;
         num_st.parse::<usize>().or_else(|x| {
-            let data = ParseError::FailedNumParse(x, num_st.into());
+            let data = ParseError::FailedNumParse(x, num_st);
             let position = self.last_position()?;
             Err(WithPosition { data, position })
         })
@@ -250,8 +248,7 @@ impl<'a> Parser<'a> {
         F: Fn(&mut Self) -> ParseResult<T>,
         T: std::fmt::Debug,
     {
-        let mut vec = Vec::new();
-        vec.push(f(self)?);
+        let mut vec = vec![f(self)?];
         self.next();
         vec.extend(std::iter::from_fn(|| {
             self.optionally(|ctx| {
@@ -272,7 +269,7 @@ impl<'a> Parser<'a> {
         F: Fn(&mut Self) -> ParseResult<T>,
         T: std::fmt::Debug,
     {
-        self.try_one(parser).map_or(None, Some)
+        self.try_one(parser).ok()
     }
 
     fn parse_instruction(&mut self) -> ParseResult<Instruction> {
@@ -362,13 +359,15 @@ mod tests {
             })]
         );
         let parser = Parser::new("msg \"The solution for everything is: \" 42");
-        assert_eq!(parser.parse_ast()?,
-        vec![ASTNode::Instruction(Instruction::Msg {
-            messages: vec![
-                RValue::from(String::from("The solution for everything is: ")),
-                RValue::from(42),
-            ]
-        })]);
+        assert_eq!(
+            parser.parse_ast()?,
+            vec![ASTNode::Instruction(Instruction::Msg {
+                messages: vec![
+                    RValue::from(String::from("The solution for everything is: ")),
+                    RValue::from(42),
+                ]
+            })]
+        );
         Ok(())
     }
 }

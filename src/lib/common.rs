@@ -154,9 +154,9 @@ impl fmt::Display for ExpectedToken {
     }
 }
 
-impl Into<ExpectedToken> for &Token {
-    fn into(self) -> ExpectedToken {
-        match self {
+impl From<&Token> for ExpectedToken {
+    fn from(val: &Token) -> ExpectedToken {
+        match val {
             Token::Keyword(kw) => ExpectedToken::Keyword(*kw),
             Token::Literal(_) => ExpectedToken::Literal,
             Token::Constant(_) => ExpectedToken::Constant,
@@ -166,6 +166,7 @@ impl Into<ExpectedToken> for &Token {
 
 impl PartialEq for ExpectedToken {
     fn eq(&self, rhs: &ExpectedToken) -> bool {
+        #[deny(clippy::match_wildcard_for_single_variants)]
         match (self, rhs) {
             (Self::Keyword(xk), Self::Keyword(yk)) => xk == yk,
             (Self::Literal, Self::Literal) => true,

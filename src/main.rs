@@ -1,9 +1,10 @@
+#![feature(stmt_expr_attributes)]
+
 mod lib;
 
 use lib::common::WithPosition;
 use lib::compiler::{compile_with_filename, BFSource};
 use lib::parser::*;
-use std::collections::HashMap;
 use std::env::args;
 use std::fs::File;
 use std::io::Read;
@@ -26,7 +27,7 @@ impl fmt::Display for CompileResult {
 }
 
 fn compile_src(name: &str, src: &str) -> Result<BFSource, WithPosition<ParseError>> {
-    let mut parser = Parser::new(src);
+    let parser = Parser::new(src);
     let ast = parser.parse_ast()?;
     Ok(compile_with_filename(name, ast))
 }
@@ -36,7 +37,7 @@ fn compile_file(name: &str) -> Result<BFSource, CompileResult> {
     let mut src = String::new();
 
     // inject code to print the file name.
-    let name_len = name.chars().collect::<Vec<_>>().len();
+    let name_len = name.chars().count();
     let mut custom_src = String::from("msg \"");
     for _ in 0..name_len + b"executing file: \"\"".len() {
         custom_src.push('-');

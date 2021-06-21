@@ -1,1 +1,2 @@
-msg "Solution to everything is: " 42 "\n"
+msg "Solution to everything is: " 42 "\n" 0
+
